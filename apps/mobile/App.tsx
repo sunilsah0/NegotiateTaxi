@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { View, Text, TextInput, Button, Alert, StyleSheet } from 'react-native';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
+import RiderHome from './screens/RiderHome';
+import DriverHome from './screens/DriverHome';
+
 
 function AuthScreen() {
   const [email, setEmail] = useState('');
@@ -44,6 +47,7 @@ function AuthScreen() {
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<string | null>(null);
+  const [name, setName] = useState('');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -53,17 +57,21 @@ export default function App() {
 
   useEffect(() => {
     if (!session) { setRole(null); return; }
-    supabase.from('profiles').select('role').eq('id', session.user.id).single()
-      .then(({ data }) => setRole(data?.role ?? null));
+    supabase.from('profiles').select('role, full_name').eq('id', session.user.id).single()
+      .then(({ data }) => { setRole(data?.role ?? null); setName(data?.full_name ?? ''); });
   }, [session]);
 
   if (!session) return <AuthScreen />;
 
   return (
-    <View style={s.c}>
-      <Text style={s.t}>Negotiate Taxi</Text>
-      <Text>Logged in as {role ?? '...'}</Text>
-      <Button title="Log out" onPress={() => supabase.auth.signOut()} />
+    <View style={{ flex: 1, paddingTop: 48 }}>
+      <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 16 }}>
+        <Text style={{ fontWeight: 'bold' }}>{name} ({role ?? '...'})</Text>
+        <Button title="Log out" onPress={() => supabase.auth.signOut()} />
+      </View>
+      {role === 'rider' && <RiderHome userId={session.user.id} />}
+      {role === 'driver' && <DriverHome userId={session.user.id} />}
+      {role === 'admin' && <Text style={{ padding: 16 }}>Admins use the web dashboard (Phase 3).</Text>}
     </View>
   );
 }
