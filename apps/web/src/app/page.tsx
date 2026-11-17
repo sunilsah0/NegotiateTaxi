@@ -1,194 +1,147 @@
 'use client';
-import { useCallback, useEffect, useState } from 'react';
-import dynamic from 'next/dynamic';
-import type { Session } from '@supabase/supabase-js';
-import { supabase } from '../lib/supabase';
-import type { MapPoint } from '../components/LiveMap';
+import Link from 'next/link';
+import { useEffect, useRef } from 'react';
+import Reveal from '../components/Reveal';
 
-const LiveMap = dynamic(() => import('../components/LiveMap'), { ssr: false });
+const MARQUEE = ['Binding fixed price', 'Live tracking', 'Licensed drivers only', 'SOS button', 'Share a ride with a friend', 'Built for Sweden'];
 
-type Profile = { id: string; full_name: string | null; role: string; approved: boolean };
-type Ride = {
-  id: string; rider_id: string; driver_id: string | null; status: string;
-  dest_address: string; pickup_lat: number; pickup_lng: number;
-  dest_lat: number; dest_lng: number; offered_price: number; final_price: number | null;
-};
-type Loc = { driver_id: string; ride_id: string | null; lat: number; lng: number };
-type Sos = { id: string; user_id: string; lat: number | null; lng: number | null; created_at: string };
-
-export default function AdminPage() {
-  const [session, setSession] = useState<Session | null>(null);
-  const [me, setMe] = useState<Profile | null>(null);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [rides, setRides] = useState<Ride[]>([]);
-  const [locs, setLocs] = useState<Record<string, Loc>>({});
-  const [alerts, setAlerts] = useState<Sos[]>([]);
+export default function Home() {
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => setSession(s));
-    return () => sub.subscription.unsubscribe();
+    let raf = 0;
+    const update = () => {
+      raf = 0;
+      const y = window.scrollY;
+      const max = document.documentElement.scrollHeight - window.innerHeight;
+      const el = rootRef.current;
+      if (el) {
+        el.style.setProperty('--y', String(Math.round(y)));
+        el.style.setProperty('--p', String(max > 0 ? y / max : 0));
+      }
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(update); };
+    update();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => { window.removeEventListener('scroll', onScroll); if (raf) cancelAnimationFrame(raf); };
   }, []);
-
-  useEffect(() => {
-    if (!session) { setMe(null); return; }
-    supabase.from('profiles').select('id, full_name, role, approved')
-      .eq('id', session.user.id).single()
-      .then(({ data }) => setMe(data as Profile | null));
-  }, [session]);
-
-  const isAdmin = me?.role === 'admin';
-
-  const load = useCallback(async () => {
-    const [p, r, s, l] = await Promise.all([
-      supabase.from('profiles').select('id, full_name, role, approved'),
-      supabase.from('rides').select('*')
-        .in('status', ['requested', 'accepted', 'arriving', 'in_progress'])
-        .order('created_at', { ascending: false }),
-      supabase.from('sos_alerts').select('*').eq('resolved', false).order('created_at', { ascending: false }),
-      supabase.from('driver_locations').select('*'),
-    ]);
-    setProfiles((p.data ?? []) as Profile[]);
-    setRides((r.data ?? []) as Ride[]);
-    setAlerts((s.data ?? []) as Sos[]);
-    setLocs(Object.fromEntries(((l.data ?? []) as Loc[]).map((x) => [x.driver_id, x])));
-  }, []);
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    load();
-    const ch = supabase.channel('admin-live')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'rides' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sos_alerts' }, load)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_locations' }, (payload) => {
-        if (payload.eventType === 'DELETE') {
-          const old = payload.old as Partial<Loc>;
-          setLocs((prev) => {
-            const copy = { ...prev };
-            if (old.driver_id) delete copy[old.driver_id];
-            return copy;
-          });
-        } else {
-          const n = payload.new as Loc;
-          setLocs((prev) => ({ ...prev, [n.driver_id]: n }));
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(ch); };
-  }, [isAdmin, load]);
-
-  const name = (id: string | null) => profiles.find((p) => p.id === id)?.full_name ?? 'Unknown';
-
-  async function login(e: React.FormEvent) {
-    e.preventDefault();
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setError(error ? error.message : '');
-  }
-  async function toggleApproval(d: Profile) {
-    await supabase.from('profiles').update({ approved: !d.approved }).eq('id', d.id);
-    load();
-  }
-  async function resolveSos(id: string) {
-    await supabase.from('sos_alerts').update({ resolved: true }).eq('id', id);
-    load();
-  }
-
-  // ---- Login screen ----
-  if (!session) {
-    return (
-      <main className="min-h-screen bg-white text-black flex items-center justify-center">
-        <form onSubmit={login} className="w-80 space-y-3">
-          <h1 className="text-2xl font-bold">Negotiate Taxi Admin</h1>
-          <input className="w-full border rounded p-2" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          <input className="w-full border rounded p-2" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-          {error && <p className="text-red-600 text-sm">{error}</p>}
-          <button className="w-full bg-black text-white rounded p-2">Log in</button>
-        </form>
-      </main>
-    );
-  }
-
-  if (me && !isAdmin) {
-    return (
-      <main className="min-h-screen bg-white text-black p-8">
-        <p>This account is not an admin.</p>
-        <button className="underline" onClick={() => supabase.auth.signOut()}>Log out</button>
-      </main>
-    );
-  }
-  if (!me) return <main className="min-h-screen bg-white text-black p-8">Loading...</main>;
-
-  // ---- Dashboard ----
-  const activeRides = rides.filter((r) => r.status !== 'requested');
-  const driverPoints: MapPoint[] = Object.values(locs)
-    .filter((l) => l.ride_id)
-    .map((l) => ({ id: 'd' + l.driver_id, lat: l.lat, lng: l.lng, color: '#2563eb', label: 'Driver: ' + name(l.driver_id) }));
-  const ridePoints: MapPoint[] = rides.flatMap((r) =>
-    r.status === 'requested'
-      ? [{ id: 'p' + r.id, lat: r.pickup_lat, lng: r.pickup_lng, color: '#f59e0b', label: 'Waiting rider: ' + name(r.rider_id) }]
-      : [
-          { id: 'p' + r.id, lat: r.pickup_lat, lng: r.pickup_lng, color: '#16a34a', label: 'Pickup: ' + name(r.rider_id) },
-          { id: 'x' + r.id, lat: r.dest_lat, lng: r.dest_lng, color: '#6b7280', label: 'Destination' },
-        ]
-  );
-  const sosPoints: MapPoint[] = alerts
-    .filter((a) => a.lat !== null && a.lng !== null)
-    .map((a) => ({ id: 's' + a.id, lat: a.lat as number, lng: a.lng as number, color: '#dc2626', label: 'SOS: ' + name(a.user_id) }));
-  const drivers = profiles.filter((p) => p.role === 'driver');
 
   return (
-    <main className="min-h-screen bg-white text-black p-6 space-y-6">
-      <header className="flex justify-between items-center">
-        <h1 className="text-2xl font-bold">Negotiate Taxi: live admin</h1>
-        <button className="underline" onClick={() => supabase.auth.signOut()}>Log out</button>
+    <div className="nt-app" ref={rootRef}>
+      <div className="nt-progress" />
+      <nav className="nt-nav">
+        <span className="nt-brand">Negotiate <span>Taxi</span></span>
+        <div className="nt-row">
+          <Link className="nt-btn sm" href="/driver">Drive</Link>
+          <Link className="nt-btn sm nt-primary" href="/rider">Ride</Link>
+        </div>
+      </nav>
+
+      <header className="nt-hero">
+        <div className="nt-hero-bg" />
+        <div className="nt-hero-inner">
+          <span className="nt-live">Prototype · Stockholm</span>
+          <h1 className="nt-title">Name your price.<br /><span className="nt-grad">Ride Stockholm.</span></h1>
+          <p className="nt-sub">Offer a fare, let licensed drivers counter, and lock a binding price before the ride starts. Then watch every kilometre live.</p>
+          <div className="nt-row" style={{ justifyContent: 'center', flexWrap: 'wrap' }}>
+            <Link className="nt-btn nt-primary" href="/rider">Book a ride</Link>
+            <Link className="nt-btn" href="/driver">Become a driver</Link>
+          </div>
+        </div>
+        <div className="nt-road" />
       </header>
 
-      {alerts.length > 0 && (
-        <section className="border-2 border-red-600 rounded p-3 space-y-2">
-          <h2 className="font-bold text-red-600">🚨 Active SOS alerts</h2>
-          {alerts.map((a) => (
-            <div key={a.id} className="flex justify-between items-center">
-              <span>{name(a.user_id)}, {new Date(a.created_at).toLocaleTimeString()}</span>
-              <button className="bg-red-600 text-white rounded px-3 py-1" onClick={() => resolveSos(a.id)}>Mark resolved</button>
-            </div>
+      <div className="nt-marquee">
+        <div className="nt-marquee-track">
+          {[...MARQUEE, ...MARQUEE].map((t, i) => <span key={i}>◆ {t}</span>)}
+        </div>
+      </div>
+
+      <section className="nt-section">
+        <Reveal><h2 className="nt-h2">Three steps. <span className="nt-grad">One fair price.</span></h2></Reveal>
+        <div className="nt-grid">
+          {[
+            ['01', 'Offer', 'Pick a destination. We show a fair price range for the trip, and you name your own offer.'],
+            ['02', 'Negotiate', 'Licensed drivers accept or counter in real time. You choose the offer you like.'],
+            ['03', 'Ride', 'The price is locked. Follow your driver live and share the trip with a friend.'],
+          ].map(([n, t, d], i) => (
+            <Reveal key={n} delay={i * 120}>
+              <div className="nt-card"><span className="nt-num">{n}</span><h3 className="nt-h3">{t}</h3><p className="nt-muted">{d}</p></div>
+            </Reveal>
           ))}
-        </section>
-      )}
-
-      <section>
-        <p className="text-sm mb-2">
-          Blue = driver, green = pickup, gray = destination, orange = rider waiting, red = SOS
-        </p>
-        <LiveMap points={[...ridePoints, ...driverPoints, ...sosPoints]} />
+        </div>
       </section>
 
-      <section>
-        <h2 className="font-bold mb-2">Active rides ({activeRides.length})</h2>
-        {activeRides.length === 0 && <p>None</p>}
-        {activeRides.map((r) => (
-          <div key={r.id} className="border-b py-1 text-sm">
-            {name(r.rider_id)} with {name(r.driver_id)}, {r.status.replace('_', ' ')}, {r.final_price} kr, to {r.dest_address}
+      <section className="nt-section nt-split2">
+        <Reveal>
+          <h2 className="nt-h2">A fair deal, <span className="nt-grad">negotiated live.</span></h2>
+          <p className="nt-muted">No hidden extras. Every offer is visible, and the final price is binding for both sides.</p>
+        </Reveal>
+        <Reveal delay={150}>
+          <div className="nt-card">
+            <div className="nt-bubble me">I offer 260 kr to Kista</div>
+            <div className="nt-bubble">Anna counters: 310 kr</div>
+            <div className="nt-bubble me">Meet in the middle: 285 kr?</div>
+            <div className="nt-bubble">Accepted. Price locked at 285 kr ✓</div>
           </div>
-        ))}
-        <p className="text-sm mt-2">Riders waiting for offers: {rides.filter((r) => r.status === 'requested').length}</p>
+        </Reveal>
       </section>
 
-      <section>
-        <h2 className="font-bold mb-2">Drivers</h2>
-        {drivers.length === 0 && <p>No drivers yet</p>}
-        {drivers.map((d) => (
-          <div key={d.id} className="flex justify-between items-center border-b py-1">
-            <span>{d.full_name ?? 'Unnamed'}: {d.approved ? 'approved' : 'waiting for approval'}</span>
-            <button className="border rounded px-3 py-1" onClick={() => toggleApproval(d)}>
-              {d.approved ? 'Revoke' : 'Approve'}
-            </button>
+      <section className="nt-section">
+        <Reveal>
+          <h2 className="nt-h2">Every move, <span className="nt-grad">live.</span></h2>
+          <p className="nt-muted">Riders, drivers, a trusted friend and our control room all see the same live map.</p>
+        </Reveal>
+        <Reveal delay={150}>
+          <div className="nt-card" style={{ marginTop: 24 }}>
+            <svg viewBox="0 0 400 200" width="100%" role="img" aria-label="Animated route preview">
+              <path d="M30 170 C 90 30, 170 190, 230 100 S 350 40, 372 56" fill="none" stroke="rgba(250,204,21,.5)" strokeWidth="3" strokeDasharray="6 8" />
+              <circle cx="30" cy="170" r="7" fill="#22c55e" />
+              <circle cx="372" cy="56" r="7" fill="#ef4444" />
+              <circle r="8" fill="#3b82f6">
+                <animateMotion dur="7s" repeatCount="indefinite" path="M30 170 C 90 30, 170 190, 230 100 S 350 40, 372 56" />
+              </circle>
+            </svg>
           </div>
-        ))}
+        </Reveal>
       </section>
-    </main>
+
+      <section className="nt-section">
+        <Reveal><h2 className="nt-h2">Built for <span className="nt-grad">trust.</span></h2></Reveal>
+        <div className="nt-grid">
+          {[
+            ['Licensed drivers', 'Drivers are approved by an admin before they can bid.'],
+            ['Binding price', 'The agreed price is locked and shown to rider and driver.'],
+            ['SOS button', 'One tap alerts the control room with your live location.'],
+            ['Share with a friend', 'A verified friend follows your trip live, only while it lasts.'],
+          ].map(([t, d], i) => (
+            <Reveal key={t} delay={i * 100}>
+              <div className="nt-card"><h3 className="nt-h3">{t}</h3><p className="nt-muted">{d}</p></div>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      <section className="nt-section">
+        <Reveal><h2 className="nt-h2">Choose your <span className="nt-grad">side.</span></h2></Reveal>
+        <div className="nt-grid">
+          {[
+            ['/rider', 'Rider', 'Book and track rides'],
+            ['/driver', 'Driver', 'Go online and take offers'],
+            ['/admin', 'Admin', 'Live control room'],
+          ].map(([href, t, d], i) => (
+            <Reveal key={href} delay={i * 100}>
+              <Link href={href} className="nt-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+                <h3 className="nt-h3">{t} →</h3><p className="nt-muted">{d}</p>
+              </Link>
+            </Reveal>
+          ))}
+        </div>
+      </section>
+
+      <footer className="nt-section" style={{ paddingTop: 0 }}>
+        <p className="nt-muted">Negotiate Taxi is a learning prototype. Running a real taxi service in Sweden requires a taxi permit, licensed drivers and a taximeter in every car.</p>
+      </footer>
+    </div>
   );
 }
