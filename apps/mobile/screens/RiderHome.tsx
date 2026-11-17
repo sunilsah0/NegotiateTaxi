@@ -5,6 +5,10 @@ import { supabase } from '../lib/supabase';
 import { geocode, distanceKm, suggestPrice } from '../lib/geo';
 import { Ride, Offer, Pos } from '../lib/types';
 import TripMap from '../components/TripMap';
+import PriceCard from '../components/PriceCard';
+import ShareRideButton from '../components/ShareRideButton';
+import SosButton from '../components/SosButton';
+
 
 const STATUS_TEXT: Record<string, string> = {
   accepted: 'Driver accepted. Getting ready.',
@@ -172,15 +176,18 @@ export default function RiderHome({ userId }: { userId: string }) {
   // 3) Accepted / arriving / in progress: live map
   return (
     <View style={{ flex: 1 }}>
-      <View style={{ padding: 12 }}>
-        <Text style={s.h}>{STATUS_TEXT[ride.status]}</Text>
-        <Text>Driver: {driverName}   |   Agreed price: {ride.final_price} kr</Text>
-      </View>
+        <View style={{ padding: 12, gap: 8 }}>
+           <Text style={s.h}>{STATUS_TEXT[ride.status]}</Text>
+           <Text>Driver: {driverName}</Text>
+           <PriceCard ride={ride} />
+           <ShareRideButton rideId={ride.id} userId={userId} />
+        </View>
       <TripMap
         pickup={{ lat: ride.pickup_lat, lng: ride.pickup_lng }}
         dest={{ lat: ride.dest_lat, lng: ride.dest_lng }}
         driver={driverPos}
       />
+    <SosButton userId={userId} rideId={ride.id} />
       {ride.status !== 'in_progress' && (
         <Button title="Cancel ride" color="red" onPress={cancelRide} />
       )}

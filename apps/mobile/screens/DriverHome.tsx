@@ -5,6 +5,7 @@ import { supabase } from '../lib/supabase';
 import { distanceKm } from '../lib/geo';
 import { Ride, Pos } from '../lib/types';
 import TripMap from '../components/TripMap';
+import SosButton from '../components/SosButton';
 
 const NEXT: Record<string, { status: string; label: string }> = {
   accepted: { status: 'arriving', label: "I'm on my way" },
@@ -48,6 +49,20 @@ export default function DriverHome({ userId }: { userId: string }) {
     return () => { supabase.removeChannel(ch); };
   }, [userId, load]);
 
+     const [approved, setApproved] = useState<boolean | null>(null);
+
+     useEffect(() => {
+       const check = () =>
+         supabase.from('profiles').select('approved').eq('id', userId).single()
+           .then(({ data }) => setApproved(data?.approved ?? false));
+       check();
+       const ch = supabase.channel('approval-' + userId)
+         .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${userId}` }, check)
+         .subscribe();
+       return () => { supabase.removeChannel(ch); };
+     }, [userId]);
+
+     useEffect(() => { if (approved) load(); }, [approved, load]);
   // While on a ride: send my GPS position every few seconds
   useEffect(() => {
     if (!active) { setMe(null); return; }
@@ -89,6 +104,15 @@ export default function DriverHome({ userId }: { userId: string }) {
     load();
   }
 
+     if (approved === null) return <Text style={{ padding: 16 }}>Loading...</Text>;
+     if (!approved) {
+       return (
+         <View style={s.c}>
+           <Text style={s.h}>Waiting for approval</Text>
+           <Text>An admin must verify your taxi permit and driver licence before you can take rides.</Text>
+         </View>
+       );
+     }
   // Active ride: map + status buttons
   if (active) {
     const next = NEXT[active.status];
@@ -103,6 +127,7 @@ export default function DriverHome({ userId }: { userId: string }) {
           dest={{ lat: active.dest_lat, lng: active.dest_lng }}
           driver={me}
         />
+        <SosButton userId={userId} rideId={active.id} />
         {next && <Button title={next.label} onPress={() => advance(next.status)} />}
       </View>
     );

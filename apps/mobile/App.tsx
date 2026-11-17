@@ -4,6 +4,8 @@ import { Session } from '@supabase/supabase-js';
 import { supabase } from './lib/supabase';
 import RiderHome from './screens/RiderHome';
 import DriverHome from './screens/DriverHome';
+import FriendsScreen from './screens/FriendsScreen';
+import SharedWithMe from './screens/SharedWithMe';
 
 
 function AuthScreen() {
@@ -48,6 +50,7 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState('');
+  const [tab, setTab] = useState<'ride' | 'friends' | 'shared'>('ride');
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -62,6 +65,7 @@ export default function App() {
   }, [session]);
 
   if (!session) return <AuthScreen />;
+  const userId = session.user.id;
 
   return (
     <View style={{ flex: 1, paddingTop: 48 }}>
@@ -69,9 +73,23 @@ export default function App() {
         <Text style={{ fontWeight: 'bold' }}>{name} ({role ?? '...'})</Text>
         <Button title="Log out" onPress={() => supabase.auth.signOut()} />
       </View>
-      {role === 'rider' && <RiderHome userId={session.user.id} />}
-      {role === 'driver' && <DriverHome userId={session.user.id} />}
-      {role === 'admin' && <Text style={{ padding: 16 }}>Admins use the web dashboard (Phase 3).</Text>}
+
+      {role === 'rider' && (
+        <>
+          <View style={{ flex: 1 }}>
+            {tab === 'ride' && <RiderHome userId={userId} />}
+            {tab === 'friends' && <FriendsScreen userId={userId} />}
+            {tab === 'shared' && <SharedWithMe userId={userId} />}
+          </View>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-around', paddingBottom: 24, paddingTop: 8, borderTopWidth: 1, borderColor: '#ddd' }}>
+            <Button title={tab === 'ride' ? '● Ride' : 'Ride'} onPress={() => setTab('ride')} />
+            <Button title={tab === 'friends' ? '● Friends' : 'Friends'} onPress={() => setTab('friends')} />
+            <Button title={tab === 'shared' ? '● Shared with me' : 'Shared with me'} onPress={() => setTab('shared')} />
+          </View>
+        </>
+      )}
+      {role === 'driver' && <DriverHome userId={userId} />}
+      {role === 'admin' && <Text style={{ padding: 16 }}>Admins use the web dashboard.</Text>}
     </View>
   );
 }
