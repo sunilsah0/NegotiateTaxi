@@ -14,6 +14,14 @@ export type Ride = {
   final_price: number | null;
   status: 'requested' | 'accepted' | 'arriving' | 'in_progress' | 'completed' | 'cancelled';
   created_at: string;
+  est_km: number | null;
+  est_minutes: number | null;
+  guide_price: number | null;
+  min_price: number | null;
+  max_price: number | null;
+  allow_pool: boolean;
+  pool_parent: string | null;
+  pool_count: number;
 };
 
 export type Offer = {

@@ -8,13 +8,15 @@ import AppShell from '../../components/AppShell';
 import AuthPanel from '../../components/AuthPanel';
 import WrongRole from '../../components/WrongRole';
 import type { MapPoint } from '../../components/LiveMap';
+import PricingEditor from '../../components/PricingEditor';
+
 
 const LiveMap = dynamic(() => import('../../components/LiveMap'), { ssr: false });
 
 type AdminRide = {
   id: string; rider_id: string; driver_id: string | null; status: string; dest_address: string;
   pickup_lat: number; pickup_lng: number; dest_lat: number; dest_lng: number;
-  offered_price: number; final_price: number | null;
+  offered_price: number; final_price: number | null; pool_parent: string | null;
 };
 type Loc = { driver_id: string; ride_id: string | null; lat: number; lng: number; updated_at: string };
 type Sos = { id: string; user_id: string; lat: number | null; lng: number | null; created_at: string };
@@ -137,7 +139,8 @@ function Dashboard() {
           <h2 className="nt-h3">Active trips</h2>
           {activeRides.length === 0 && <p className="nt-muted">None right now</p>}
           {activeRides.map((r) => (
-            <p key={r.id} className="nt-muted">{name(r.rider_id)} with {name(r.driver_id)} · {r.status.replace('_', ' ')} · {r.final_price} kr</p>
+
+          <p key={r.id} className="nt-muted">{name(r.rider_id)} with {name(r.driver_id)} · {r.status.replace('_', ' ')} · {r.final_price} kr{r.pool_parent ? ' · shared' : ''}</p>
           ))}
         </div>
 
@@ -151,6 +154,7 @@ function Dashboard() {
             </div>
           ))}
         </div>
+        <PricingEditor />
         <p className="nt-muted">Map: blue = driver on a trip, cyan = available driver, orange = waiting rider, green = pickup, gray = destination, red = SOS.</p>
       </div>
       <div className="nt-map"><LiveMap points={points} fitKey={String(points.length)} /></div>

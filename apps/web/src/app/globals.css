@@ -108,3 +108,9 @@ html,body{background:var(--nt-bg);color:var(--nt-text)}
 @keyframes ntpop{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}
 .nt-num{font-size:2.4rem;font-weight:800;color:var(--nt-accent)}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.nt-reveal,.nt-bubble{opacity:1!important;transform:none!important}}
+
+/* ===== Phase 5: pop-up, alerts, badges ===== */
+.nt-modal-back{position:fixed;inset:0;z-index:100;background:rgba(0,0,0,.6);display:grid;place-items:center;padding:16px}
+.nt-modal{width:min(440px,100%);background:#12121a}
+.nt-alert{border-color:var(--nt-accent);background:rgba(250,204,21,.1)}
+.nt-badge{display:inline-block;padding:2px 10px;border-radius:99px;background:rgba(250,204,21,.15);color:var(--nt-accent);font-size:.8rem}

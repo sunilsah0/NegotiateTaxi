@@ -1,3 +1,5 @@
+import { supabase } from './supabase';
+
 import type { Pos } from './types';
 
 export type Place = { lat: number; lng: number; label: string };
@@ -58,4 +60,27 @@ export async function getRoute(a: Pos, b: Pos) {
     const km = distanceKm(a, b) * 1.3;
     return { km, minutes: km * 2.5, line: [[a.lat, a.lng], [b.lat, b.lng]] as [number, number][] };
   }
+}
+
+export type TripQuote = {
+  km: number;
+  minutes: number;
+  line: [number, number][];
+  guide: number;
+  min: number;
+  max: number;
+};
+
+const ceil2 = (n: number) => Math.ceil(n * 100) / 100;
+
+// Gets the road route, then asks the database for the allowed price range,
+// so the screen and the database always use the same numbers.
+export async function quoteTrip(a: Pos, b: Pos): Promise<TripQuote> {
+  const r = await getRoute(a, b);
+  const km = ceil2(Math.max(r.km, distanceKm(a, b)));
+  const minutes = ceil2(Math.max(r.minutes, km * 1.5));
+  const { data, error } = await supabase.rpc('price_band', { p_km: km, p_minutes: minutes });
+  if (error || !data || !data[0]) throw new Error(error?.message ?? 'Could not load the price range.');
+  const row = data[0] as { guide: number; min_price: number; max_price: number };
+  return { km, minutes, line: r.line, guide: row.guide, min: row.min_price, max: row.max_price };
 }
